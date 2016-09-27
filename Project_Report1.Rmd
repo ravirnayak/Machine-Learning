@@ -1,0 +1,139 @@
+---
+title: "Machine Learning Project Report"
+author: "Ravi Kumar"
+date: "September 26, 2016"
+output: html_document
+---
+#Executive Summary
+One thing that people regularly do is to quantify how much of a particular activity they do using modern devices such as  Jawbone Up, Nike FuelBand, Fitbit etc. but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and predict the manner in which they have performed the excercise.Also, this report describes how model has been buit, which cross validation has been used, what expected out of sample error is for the model, and why theses choices were made. Also, prediction model developed has been used to predict 20 different test cases. I would like to thank http://groupware.les.inf.puc-rio.br/har for providing data for the project.
+
+###Libraries
+Following library has been used throughout the preprocessing, model building and predicting the test data set.
+```{r message=FALSE, warning =FALSE }
+library(caret)
+library(kernlab)
+library(randomForest)
+library(e1071)
+```
+
+###Getting the Data and Preprocessing
+
+Getting the raw data and converting raw data into tidy data following a particular processing script are very important steps of modeling before doing any further analysis. Same processing script should be followed to convert training and test raw dataset to tidy dataset which is ready for model development and testing the model.   
+
+####Getting data from Web
+```{r eval=FALSE}
+#Follwing are the link for training and testing data:
+train_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#First new folder named "Machine Learning" has been created (if not already exist) using following code:
+if (!file.exists("Machine Learning")){
+  dir.create("Machine Learning")
+}
+#Files are downloaded into "Machine Learning" folder using following command:
+download.file(train_Url, destfile = "./Machine Learning/train_raw.csv")
+download.file(test_Url, destfile = "./Machine Learning/test_raw.csv")
+```
+####Loading file on R
+File has been read using read.csv command automatically set sep = "," and header = TRUE as data is in .csv format. Also, na.strings has been used to assign NA for blank, #DIV/0! and NA while reading the file.
+
+```{r message=FALSE, warning =FALSE}
+# Load data into R
+train_raw <- read.csv("./Machine Learning/train_raw.csv",na.strings = c("#DIV/0!", "NA"))
+test_raw <- read.csv("./Machine Learning/test_raw.csv",na.strings = c("#DIV/0!", "NA"))
+```
+####Cleaning the data
+As there are 19622 observations and multiple columns have NA values. Therefore we can eliminate columns with NA values. 
+```{r message=FALSE, warning =FALSE}
+# remove columns containing more than 95% of NA
+train_Without_NA <- train_raw[, colSums(!is.na(train_raw))/nrow(train_raw)>0.95]
+test_Without_NA <- test_raw[, colSums(!is.na(test_raw))/nrow(test_raw)>0.95]
+## remove columns with zero variance
+nsv<- nearZeroVar(train_Without_NA, saveMetrics = TRUE)
+train1<-train_Without_NA[, !nsv$nzv]
+nsv1<- nearZeroVar(test_Without_NA, saveMetrics = TRUE)
+test1<-test_Without_NA[, !nsv1$nzv]
+#Remove Identifiers
+train_clean <- train1[, 8:ncol(train1)]
+test_clean <- test1[, 8:ncol(test1)]
+#dummies <- dummyVars(classe~user_name, train_clean)
+#z<-predict(dummies, train_clean)
+```
+###Model Development
+Before any model development testing The train data set has been devided in training and testing data set and test data is named as validation dataset. As we can see both training and testing data has same proportion of each category of excercise. 
+```{r}
+set.seed(123)
+#Check % of each excercise category in train_clean
+table(train_clean$classe)/nrow(train_clean)
+#dividing data into training, testing and validation data set
+inTrain <- createDataPartition (y=train_clean$classe, p=0.7, list = FALSE)
+training<- train_clean[inTrain,]
+testing<- train_clean[-inTrain,]
+dim(training)
+dim(testing)
+#Check % of each excercise category in training
+table(training$classe)/nrow(training)
+#Check % of each excercise category in testing
+table(testing$classe)/nrow(testing)
+validation<- test_clean
+```
+Random forest method has been chosen developing the model as it involves both begging and classification and hence gives most accurate result. If target or respose variable is a factor then classification random forest will be used. 
+```{r}
+class(training$classe)
+```
+Since class of target is factor, So classification Random Forest will be built. 
+#### Building Random Forest using R
+```{r}
+# Build random forest model with ntree=500 and variable importance to be assessed as true
+modFit <- randomForest(classe ~., training, ntree = 500, importance = T)
+plot(modFit)
+```
+There is no significant error reduction after 200 decision trees. To find out important variable is also an important step in developing a model. Following plot shows 10 most important variable and also list of variablw with decreasing importance has been created.
+```{r}
+varImpPlot(modFit, sort=T,main ="Variable Importance",type=2, n.var=10)
+```
+```{r}
+var.imp <- data.frame(importance(modFit,type=2))
+# make row names as columns
+var.imp$Variables <- row.names(var.imp)
+var.imp[order(var.imp$MeanDecreaseGini,decreasing = T),]
+```
+Based on this variable importance table, variables should be selected for any other predtive models.
+
+####In Sample Error
+To calculate In Sample error, model developed has been used to predict traning data.
+```{r}
+training$predicted <- predict(modFit, training)
+confusionMatrix(data= training$predicted, reference = training$classe, positive = 'Yes')
+```
+
+The result shows that model is having OBB error of 0%.
+
+###Cross Validation
+Cross validation was done using the testing data which was kept aside from our train data. The result shows model is able to predict the testing data perfectly.
+```{r }
+testing$predicted <- predict(modFit,testing)
+#print(pred1)
+confusionMatrix(data = testing$predicted, reference= testing$classe, positive = 'Yes')
+```
+As we can see model has predicted testing data with the accuracy of 99.42% i.e. out of Sample error is 0.58% only.
+
+###Prediction
+Now validation data has been predicted using the model.
+```{r}
+# to makes levels of factors of validation1 equal to levels in training data set 
+levels(validation$new_window)<-levels(training$new_window)
+levels(validation$cvtd_timestamp)<-levels(training$cvtd_timestamp)
+set.seed(123)
+validation$pred <- predict(modFit,validation)
+Problem_id <-c(1:20)
+Prediction<-validation$pred
+result<-data.frame(Problem_id,Prediction)
+```
+The final result for test data is:
+```{r}
+print(result)
+```
+###Conclusion
+Random forest is the most suitable method for the given data set but before that tidy data needs to be prepared from raw data using multiple data cleaning and preprocessing processes. Also, both test and training data should have same preprocessing script.   
+
+
