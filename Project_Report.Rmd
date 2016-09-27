@@ -1,0 +1,112 @@
+---
+title: "Machine Learning Project Report"
+author: "Ravi Kumar"
+date: "September 26, 2016"
+output: html_document
+---
+#Executive Summary
+One thing that people regularly do is to quantify how much of a particular activity they do using modern devices such as  Jawbone Up, Nike FuelBand,Fitbit etc. but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants and predict the manner in which they have performed the excercise.Also, this report describes how model has been buit, which cross validation has been used, what expected out of sample error is for the model, and why theses choices were made. Also, prediction model developed has been used to predict 20 different test cases. I would like to thank http://groupware.les.inf.puc-rio.br/har for providing data for the project.
+
+###Libraries
+Following library has been used throughout the preprocessing, model building and predicting the test data set.
+```{r message=FALSE, warning =FALSE }
+library(caret)
+library(kernlab)
+library(randomForest)
+```
+
+###Getting the Data and Preprocessing
+
+Getting the raw data and converting raw data into tidy data following a particular processing script are very important steps of modeling before doing any further analysis. Same processing script should be followed to convert training and test raw dataset to tidy dataset which is ready for model development and testing the model.   
+
+####Getting data from Web
+```{r eval=FALSE}
+#Follwing are the link for training and testing data:
+train_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_Url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#First new folder named "Machine Learning" has been created (if not already exist) using following code:
+if (!file.exists("Machine Learning")){
+  dir.create("Machine Learning")
+}
+#Files are downloaded into "Machine Learning" folder using following command:
+download.file(train_Url, destfile = "./Machine Learning/train_raw.csv")
+download.file(test_Url, destfile = "./Machine Learning/test_raw.csv")
+```
+####Loading file on R
+File has been read using read.csv command automatically set sep = "," and header = TRUE as data is in .csv format. Also, na.strings has been used to assign NA for blank, #DIV/0! and NA while reading the file.
+
+```{r message=FALSE, warning =FALSE}
+# Load data into R
+train_raw <- read.csv("./Machine Learning/train_raw.csv",na.strings = c("", " ", "#DIV/0!", "NA"))
+test_raw <- read.csv("./Machine Learning/test_raw.csv",na.strings = c("", " ", "#DIV/0!", "NA"))
+```
+####Cleaning the data
+As there are 19622 observations and multiple columns have NA values. Therefore we can eliminate columns with NA values. 
+```{r message=FALSE, warning =FALSE}
+# remove columns containing only NA
+train_Without_NA <- train_raw[, colSums(!is.na(train_raw))>0]
+test_Without_NA <- test_raw[, colSums(!is.na(test_raw))>0]
+# find all the complete cases for both training and test data
+train_clean <- train_Without_NA[complete.cases(train_Without_NA),]
+test_clean <- test_Without_NA[complete.cases(test_Without_NA),]
+```
+
+###Model Development
+Before any model development testing The train data set has been devided in training and testing data set and test data is named as validation dataset. Random forest method has been chosen developing the model as it involves both begging and classification and hence gives most accurate result. 
+```{r}
+set.seed(12345)
+#dividing data into training, testing and validation data set
+inTrain <- createDataPartition (y=train_clean$classe, p=0.7, list = FALSE)
+training<- train_clean[inTrain,]
+testing<- train_clean[inTrain,]
+validation<- test_clean
+# Random forest method used 
+set.seed(12345)
+modFit1 <- randomForest( training[,-length(training)], training$classe)
+print(modFit1)
+set.seed(12345)
+##Tuning of Random forest using maxnodes and ntree
+modFit2 <- randomForest( training[,-length(training)], training$classe, maxnodes=25, ntree=1000)
+print(modFit2)
+#Tuning of Random forest using sampsize and ntree
+set.seed(12345)
+modFit3 <- randomForest( training[,-length(training)], training$classe, sampsize=100, ntree=1000)
+print(modFit3)
+```
+The result shows that model is having OBB error of 5.19%. Tuning of model has been done using sampsize, ntree and maxnodes but model1 has the least error. So Model 1 has been selected.
+
+###Cross Validation
+Cross validation was done using the testing data which was kept aside from our train data. The result shows model is able to predict the testing data perfectly.
+```{r }
+pred1 <- predict(modFit1,testing)
+print(pred1)
+confusionMatrix(pred1, testing$classe)
+```
+###Prediction
+To predict using tast data i.e. validation, test data needs to be in format of train data. To do that following operations has been done.
+```{r message=FALSE, warning =FALSE}
+#create a subset of training set with no of rows same as validation set
+x<-training[1:nrow(validation),]
+#find the location of each of variable of validation in x exept last one which is new variable
+z<-match(names(validation[,-length(validation)]),names(x))
+# replace column of x with column of validation wherever variable is matching, otherwise set it to 0
+x[,z]<-validation[,1:ncol(validation)-1]
+x[,-z]<-0
+validation1<-x
+row.names(validation1)<-c(1:20)
+# to makes levels of factors of validation1 equal to levels in training data set 
+levels(validation1$new_window)<-levels(training$new_window)
+levels(validation1$cvtd_timestamp)<-levels(training$cvtd_timestamp)
+```
+Now validation1 data can be predicted with model-1.
+```{r message=FALSE, warning =FALSE}
+set.seed(12345)
+pred <- predict(modFit1,validation1)
+
+```
+###Conclusion
+The final result for test data is:
+```{r echo=FALSE}
+print(pred)
+```
+
